@@ -15,13 +15,13 @@
 typedef unsigned char bool;
 #define Ndigits 4			// only work with power of two
 
-static uint8_t mode = 0;
+volatile uint8_t mode = 0;
 uint8_t digits[4];
 const unsigned char seg7[21] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F,
 								0xBF, 0x86, 0xDB, 0xCF, 0xE6, 0xED, 0xFD, 0x87, 0xFF, 0xEF, 0x0}; // with the dot, to show AM/PM
 volatile uint8_t button_disable;
 static uint8_t index = 0;
-uint8_t blink = 255;
+volatile uint8_t blink = 255;
 
 uint8_t minute;
 uint8_t hour;
@@ -38,9 +38,9 @@ void setupTimer1() {
 }
 
 void setupTimer0() {
-	TCCR0 |= (1 << CS01);
+	TCCR0 |= (1 << CS01)|(1 << CS00)|(1 << WGM01)|(1<<COM00);
 	TCNT0 = 0;
-	TIMSK |= (1 << TOIE0);
+	TIMSK |= (1 << OCIE0);
 }
 
 bool increaseMinute() {
@@ -111,7 +111,9 @@ int main(void)
 }
 
 // display interrupt
-ISR(TIMER0_OVF_vect) {
+ISR(TIMER0_COMP_vect) {
+	OCR0 = 100; // as large as possible so that people can't see multiplexing
+	
 	if (button_disable > 0)
 		button_disable --;
 	index ++;
@@ -120,6 +122,7 @@ ISR(TIMER0_OVF_vect) {
 	
 	switch(mode) {
 		case 0:
+		case 2:
 		// normal time display
 			PORTC = seg7[digits[index]];
 			break;
@@ -136,7 +139,6 @@ ISR(TIMER0_OVF_vect) {
 				} else {
 				blink = 255;
 			}
-			break;
 	}
 }
 
@@ -145,6 +147,7 @@ ISR(INT0_vect) {
 	if (button_disable == 0) {
 		if (mode == 1) {
 			increaseHour();
+			calculateDigits(hour, minute);
 		}
 		button_disable = 100;
 	}
@@ -155,6 +158,7 @@ ISR(INT1_vect) {
 	if (button_disable == 0) {
 		if (mode == 1) {
 			increaseMinute();
+			calculateDigits(hour, minute);
 		}
 		button_disable = 100;
 	}
@@ -166,7 +170,12 @@ ISR(INT2_vect) {
 		button_disable = 100;
 		mode ++;
 		if (mode > 2)
-			mode = 1;
+			mode = 0;
+			
+		if (mode == 2)
+			calculateDigits(alarmhour, alarmmin);
+		else
+			calculateDigits(hour, minute);
 	}
 }
 
@@ -177,5 +186,6 @@ ISR(TIMER1_COMPA_vect) {
 			increaseHour();
 		}
 	}
-	calculateDigits(hour, minute);
+	if (mode == 0)
+		calculateDigits(hour, minute);
 }
