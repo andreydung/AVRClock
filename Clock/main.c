@@ -43,21 +43,14 @@ void setupTimer0() {
 	TIMSK |= (1 << OCIE0);
 }
 
-bool increaseMinute() {
-	bool carry = FALSE;
-	minute ++;
-	if (minute >= 60) {
-		minute = 0;
-		carry = TRUE;
-	}
-	return carry;
-}
+
 
 void calculateDigits(uint8_t h, uint8_t m) {
 
 	digits[2] = m/10;
 	digits[3] = m - 10*digits[2];
 	
+	h++;	
 	unsigned char ampmhour = h;
 
 	if (h > 12) {
@@ -78,8 +71,31 @@ void calculateDigits(uint8_t h, uint8_t m) {
 
 void increaseHour() {
 	hour ++;
-	if (hour > 24) {
-		hour = 1;
+	if (hour > 23) {
+		hour = 0;
+	}
+}
+
+bool increaseMinute() {
+	bool carry = FALSE;
+	minute ++;
+	if (minute >= 60) {
+		minute = 0;
+		carry = TRUE;
+	}
+	return carry;
+}
+
+void increaseAlarmHour() {
+	alarmhour ++;
+	if (alarmhour > 23)
+		alarmhour = 0;
+}
+
+void increaseAlarmMin() {
+	alarmmin ++;
+	if (alarmmin > 59) {
+		alarmmin = 0;
 	}
 }
 
@@ -97,6 +113,8 @@ int main(void)
 	
 	minute = 15;
 	hour = 2;
+	alarmhour = 0;
+	alarmmin = 0;
 	increaseHour();
 	increaseMinute();
     
@@ -128,7 +146,7 @@ ISR(TIMER0_COMP_vect) {
 			break;
 		case 1:
 		// change times, blinking the digits
-			if (blink > 100) {
+			if (blink > 25) {
 				PORTC = seg7[digits[index]];
 			}
 			else {
@@ -137,7 +155,7 @@ ISR(TIMER0_COMP_vect) {
 			if (blink > 0) {
 				blink --;
 				} else {
-				blink = 255;
+				blink = 100;
 			}
 	}
 }
@@ -148,8 +166,11 @@ ISR(INT0_vect) {
 		if (mode == 1) {
 			increaseHour();
 			calculateDigits(hour, minute);
+		} else if (mode == 2) {
+			increaseAlarmHour();
+			calculateDigits(alarmhour, alarmmin);
 		}
-		button_disable = 100;
+		button_disable = 40;
 	}
 }
 
@@ -159,8 +180,11 @@ ISR(INT1_vect) {
 		if (mode == 1) {
 			increaseMinute();
 			calculateDigits(hour, minute);
+		} else if (mode == 2) {
+			increaseAlarmMin();
+			calculateDigits(alarmhour, alarmmin);
 		}
-		button_disable = 100;
+		button_disable = 40;
 	}
 }
 
