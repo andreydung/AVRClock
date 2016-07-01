@@ -15,16 +15,18 @@
 typedef unsigned char bool;
 #define Ndigits 4			// only work with power of two
 
-static unsigned char mode = 0;
-unsigned char digits[4];
+static uint8_t mode = 0;
+uint8_t digits[4];
 const unsigned char seg7[21] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F,
-								0xBF, 0x86, 0xDB, 0xCF, 0xE6, 0xED, 0xFD, 0x87, 0x8F, 0xEF, 0x0};
-volatile unsigned char button_disable;
-static unsigned char index = 0;
-unsigned char blink = 255;
+								0xBF, 0x86, 0xDB, 0xCF, 0xE6, 0xED, 0xFD, 0x87, 0xFF, 0xEF, 0x0}; // with the dot, to show AM/PM
+volatile uint8_t button_disable;
+static uint8_t index = 0;
+uint8_t blink = 255;
 
-unsigned char minute;
-unsigned char hour;
+uint8_t minute;
+uint8_t hour;
+uint8_t alarmhour;
+uint8_t alarmmin;
 
 void setupTimer1() {
 	//setup TIMER1
@@ -44,33 +46,40 @@ void setupTimer0() {
 bool increaseMinute() {
 	bool carry = FALSE;
 	minute ++;
-	if (minute > 60) {
+	if (minute >= 60) {
 		minute = 0;
 		carry = TRUE;
 	}
-	
-	digits[2] = minute/10;
-	digits[3] = minute - 10*digits[2];
-
 	return carry;
+}
+
+void calculateDigits(uint8_t h, uint8_t m) {
+
+	digits[2] = m/10;
+	digits[3] = m - 10*digits[2];
+	
+	unsigned char ampmhour = h;
+
+	if (h > 12) {
+		// add a dot to differentiate AM/PM
+		ampmhour -= 12;
+		digits[0] = ampmhour/10;
+		digits[1] = ampmhour - 10 * digits[0];
+		digits[1] += 10;
+		} else {
+		digits[0] = ampmhour/10;
+		digits[1] = ampmhour - 10 * digits[0];
+	}
+
+	if (digits[0] == 0) {
+		digits[0] = 20;
+	}
 }
 
 void increaseHour() {
 	hour ++;
-	if (hour >= 24) {
-		hour = 0;
-	}
-	
-	digits[0] = hour/10;
-	digits[1] = hour - 10* digits[0];
-	
-	if (hour >=12) {
-		digits[1] += 10;
-		digits[0] --;
-	}
-	
-	if (digits[0] == 0) {
-		digits[0] = 20;
+	if (hour > 24) {
+		hour = 1;
 	}
 }
 
@@ -86,10 +95,10 @@ int main(void)
 
 	sei();
 	
-	digits[0] = 1;
-	digits[1] = 1;
-	digits[2] = 5;
-	digits[3] = 5;
+	minute = 15;
+	hour = 2;
+	increaseHour();
+	increaseMinute();
     
 	DDRC = 0xFF;
 	DDRA = 0xFF;		// Port A for the multiplex
@@ -101,30 +110,37 @@ int main(void)
 	return 0;
 }
 
+// display interrupt
 ISR(TIMER0_OVF_vect) {
 	if (button_disable > 0)
 		button_disable --;
 	index ++;
 	index &= (Ndigits - 1);
 	PORTA = 1 << index;
-	if (mode == 0) {
-		PORTC = seg7[digits[index]];
-	} 
-	else if (mode == 1) {
-		if (blink > 100) {
+	
+	switch(mode) {
+		case 0:
+		// normal time display
 			PORTC = seg7[digits[index]];
-		}
-		else {
-			PORTC = 0x0;
-		}
-		if (blink > 0) {
-			blink --;
-		} else {
-			blink = 255;
-		}
+			break;
+		case 1:
+		// change times, blinking the digits
+			if (blink > 100) {
+				PORTC = seg7[digits[index]];
+			}
+			else {
+				PORTC = 0x0;
+			}
+			if (blink > 0) {
+				blink --;
+				} else {
+				blink = 255;
+			}
+			break;
 	}
 }
 
+// hour setting
 ISR(INT0_vect) {
 	if (button_disable == 0) {
 		if (mode == 1) {
@@ -134,6 +150,7 @@ ISR(INT0_vect) {
 	}
 }
 
+// time setting
 ISR(INT1_vect) {
 	if (button_disable == 0) {
 		if (mode == 1) {
@@ -143,18 +160,22 @@ ISR(INT1_vect) {
 	}
 }
 
+//interrupt to change modes
 ISR(INT2_vect) {
 	if (button_disable == 0) {
 		button_disable = 100;
 		mode ++;
-		mode &= 1;
+		if (mode > 2)
+			mode = 1;
 	}
 }
 
+// timer interrupt
 ISR(TIMER1_COMPA_vect) {
-	if (mode == 0) {
+	if (mode == 0 || mode == 2) {
 		if (increaseMinute()) {
 			increaseHour();
 		}
 	}
+	calculateDigits(hour, minute);
 }
